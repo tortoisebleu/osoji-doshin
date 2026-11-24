@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<!--
+  お掃除同心 v4
+  v3 → v4：記事名の行を整理（記事名＋リセット／保存名の表示／自動チェックの3行）、保存名の表示を「この名前で保存されます」に変更、バージョンを画面から隠して見出しにマウスを乗せると表示
+-->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>お掃除同心</title>
+<style>
+:root{color-scheme:light dark;--bg:#f4f8f6;--panel:#fff;--ink:#1d2b26;--muted:#66786f;--line:#d5e3dc;--accent:#2a9a80;--accent-ink:#fff;--ok:#17724a;--ng:#b3261e;--warn:#8a5a00;--code:#eef5f1}
+@media (prefers-color-scheme:dark){:root{--bg:#111815;--panel:#18221e;--ink:#e4eee9;--muted:#98ada4;--line:#2b3a33;--accent:#4fc3a5;--accent-ink:#0d1a15;--ok:#72d7a2;--ng:#ff8c82;--warn:#e6b84a;--code:#141d19}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.7 -apple-system,"Hiragino Sans","Yu Gothic UI","Noto Sans JP",sans-serif}
+header{padding:18px 24px 8px;max-width:1200px;margin:0 auto}
+header h1{margin:0;font-size:20px;letter-spacing:.02em}
+header p{margin:2px 0 0;color:var(--muted);font-size:13px}
+main{max-width:1200px;margin:0 auto;padding:8px 24px 48px}
+.namebar{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin:8px 0 4px}
+.nextline{margin:0 0 10px;font-size:13px;color:var(--muted);min-height:1.7em}
+h1#appname{cursor:default}
+.namebar label{font-weight:600}
+.namebar input[type=text]{flex:1 1 240px;max-width:360px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);font:inherit}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"src out" "report restore";gap:16px;align-items:start}
+#paneSrc{grid-area:src;align-self:stretch}#paneOut{grid-area:out;align-self:stretch}#report{grid-area:report}#restoreBox{grid-area:restore}
+@media (max-width:860px){.cols{grid-template-columns:minmax(0,1fr);grid-template-areas:"src" "out" "report" "restore"}}
+.optrow{display:flex;gap:8px;align-items:center;margin:0 0 10px;font-size:13px;color:var(--muted)}
+.optrow label{display:flex;gap:6px;align-items:center;cursor:pointer}
+.namebar .spacer{margin-left:auto}
+.pane{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;min-width:0}
+.pane h2{margin:0 0 8px;font-size:14px;display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.pane h2 .size{font-weight:400;font-size:12px;color:var(--muted)}
+textarea{width:100%;height:380px;resize:vertical;border:1px solid var(--line);border-radius:6px;padding:10px;background:var(--code);color:var(--ink);font:12.5px/1.55 ui-monospace,Menlo,Consolas,monospace}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+button{font:inherit;padding:7px 16px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+button:focus-visible,input:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.status{color:var(--muted);font-size:13px;min-height:1.7em}
+.status.ok{color:var(--ok);font-weight:600}
+.status.ng{color:var(--ng);font-weight:600}
+#report{display:grid;gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 16px}
+.card h3{margin:0 0 6px;font-size:14px}
+.card ul{margin:0;padding-left:20px}
+.card li{margin:2px 0}
+.ok{color:var(--ok)}.ng{color:var(--ng)}.warn{color:var(--warn)}
+.sub{margin-left:8px;font-size:13px}
+.scroll{max-height:220px;overflow:auto}
+.empty{color:var(--muted);margin:0}
+.gname{font-weight:600;margin-top:8px}
+details summary{cursor:pointer;font-weight:600;font-size:14px}
+details .note{color:var(--muted);font-size:13px;margin:6px 0 8px}
+details textarea{height:220px}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="appname">お掃除同心</h1>
+  <p>BloggerのHTMLを掃除して、画像やリンクが変わっていないか見回ります。貼り付けた内容はこのPCの中だけで処理されます（通信なし・APIキー不要）。</p>
+</header>
+<main>
+  <div class="namebar">
+    <label for="name">記事名</label>
+    <input id="name" type="text" placeholder="例：verdon-gorges">
+    <button id="reset" class="spacer" title="元のHTML・結果・復元欄・記事名をすべて空にして、次の記事の準備をします">次の記事へ（リセット）</button>
+  </div>
+  <div class="nextline"><span id="next"></span></div>
+  <div class="optrow">
+    <label><input id="auto" type="checkbox"> 貼り付けたら自動で掃除する</label>
+  </div>
+
+  <div class="cols">
+    <section class="pane" id="paneSrc">
+      <h2>元のHTML <span class="size" id="sizeSrc"></span></h2>
+      <textarea id="src" spellcheck="false" placeholder="Bloggerの「HTML表示」の内容をここに貼り付け"></textarea>
+      <div class="row">
+        <button id="run" class="primary">掃除する</button>
+        <button id="paste" title="BloggerなどでコピーしたHTML（Ctrl + C）を、ここに貼り付けて、そのまま掃除します">貼り付けて掃除</button>
+        <span id="msgSrc" class="status" role="status" aria-live="polite" data-idle="Ctrl + Enter でも実行できます">Ctrl + Enter でも実行できます</span>
+      </div>
+    </section>
+    <section class="pane" id="paneOut">
+      <h2>掃除後のHTML <span class="size" id="sizeOut"></span></h2>
+      <textarea id="out" spellcheck="false" readonly></textarea>
+      <div class="row">
+        <button id="copy">コピー</button>
+        <button id="copyClaude" title="画像URLを短縮し、掃除レポートを付けてコピーします">Claude用にコピー</button>
+        <button id="save">ファイルに保存</button>
+        <span id="msgOut" class="status" role="status" aria-live="polite" data-idle=""></span>
+      </div>
+    </section>
+
+  <div id="report"></div>
+
+  <details class="pane" id="restoreBox">
+    <summary>Claudeから戻ってきたHTMLの画像URLを復元する</summary>
+    <p class="note">「Claude用にコピー」で短縮した <code>{{U1}}</code> などの記号を、元の長いURLに戻します。復元できるのは、直近に掃除した記事の分です。</p>
+    <textarea id="back" spellcheck="false" placeholder="Claudeが返したHTMLをここに貼り付け"></textarea>
+    <div class="row">
+      <button id="restore" class="primary">URLを復元</button>
+      <button id="copyBack">コピー</button>
+      <button id="saveBack">ファイルに保存</button>
+      <span id="msgBack" class="status" role="status" aria-live="polite" data-idle=""></span>
+    </div>
+  </details>
+  </div>
+</main>
+
+<script>
+const VERSION = 'v4';   // バージョンはここ（画面にはマウスを乗せると表示）
+const $ = id => document.getElementById(id);
+const BLOCK = new Set(['DIV','P','H1','H2','H3','H4','H5','H6','UL','OL','TABLE','BLOCKQUOTE','PRE','IFRAME','FIGURE','HR']);
+const TW = ['font-claude-response-body','break-words','whitespace-normal'];
+const JP = '\\u3040-\\u30ff\\u4e00-\\u9fff';
+const PUNCT = new RegExp(`[${JP}][,.][${JP}]`, 'g');
+const CHECK_TAGS = ['div','p','ul','ol','table','a','span','strong','b','em','small','h2','h3'];
+const URL_RE = /https:\/\/blogger\.googleusercontent\.com\/img\/(?:[a-z]\/)?(?:[A-Za-z0-9_-]{3,30}\/)?[A-Za-z0-9_-]{60,}/g;
+
+const excerpt = (s, n = 40) => { s = s.replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n) + '…' : s; };
+
+/* ---------- 保存まわり（ローカルストレージが使えない環境でも動く） ---------- */
+const ls = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+
+function snapshot(root) {
+  const imgs = [...root.querySelectorAll('img')];
+  return {
+    src: imgs.map(i => i.getAttribute('src') || ''),
+    href: [...root.querySelectorAll('a[href]')].map(a => a.getAttribute('href')),
+    alt: imgs.map(i => i.getAttribute('alt') || '')
+  };
+}
+
+function reorderAttrs(img) {
+  const attrs = [...img.attributes].map(a => [a.name, a.value]);
+  const first = ['src', 'width', 'height', 'alt', 'loading'];
+  attrs.forEach(([n]) => img.removeAttribute(n));
+  first.forEach(n => { const a = attrs.find(x => x[0] === n); if (a) img.setAttribute(n, a[1]); });
+  attrs.filter(a => !first.includes(a[0])).forEach(a => img.setAttribute(a[0], a[1]));
+}
+
+function format(html) {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  const root = tpl.content;
+  const before = snapshot(root);
+  const stats = {};
+  const warns = [];
+  const bump = (k, n = 1) => { stats[k] = (stats[k] || 0) + n; };
+  const warn = (type, text) => warns.push({ type, text });
+
+  // 0. 元の文字列でタグの開閉数を数える（ブラウザの自動補正で隠れてしまうため）
+  const plain = html.replace(/<!--[\s\S]*?-->/g, '').replace(/<(style|script)\b[\s\S]*?<\/\1\s*>/gi, '');
+  CHECK_TAGS.forEach(t => {
+    const o = (plain.match(new RegExp('<' + t + '(?=[\\s>/])', 'gi')) || []).length;
+    const c = (plain.match(new RegExp('</' + t + '\\s*>', 'gi')) || []).length;
+    if (o !== c) warn('タグの開閉数が合わない（元のHTML）', `<${t}> 開き ${o} 個 / 閉じ ${c} 個。ブラウザが自動で補正しているため、掃除後は閉じ忘れが見えなくなっています`);
+  });
+
+  // 1. 属性・クラスの掃除
+  root.querySelectorAll('*').forEach(el => {
+    ['imageanchor', 'border', 'data-original-height', 'data-original-width'].forEach(a => {
+      if (!el.hasAttribute(a)) return;
+      if (a === 'border' && el.getAttribute('border') !== '0') return;
+      el.removeAttribute(a); bump('Blogger特有の属性の削除');
+    });
+    if (el.getAttribute('dir') === 'ltr' && /^(P|H[1-6])$/.test(el.tagName)) {
+      el.removeAttribute('dir'); bump('dir="ltr" の削除');
+    }
+    const cls = (el.getAttribute('class') || '').split(/\s+/).filter(Boolean);
+    if (cls.some(c => TW.includes(c))) {
+      const keep = cls.filter(c => !TW.includes(c));
+      keep.length ? el.setAttribute('class', keep.join(' ')) : el.removeAttribute('class');
+      bump('Tailwind系クラスの削除');
+    }
+    if (el.hasAttribute('style') && (el.matches('div.separator') || (el.tagName === 'A' && el.querySelector('img')))) {
+      el.removeAttribute('style'); bump('インラインstyleの削除');
+    }
+  });
+
+  // 2. 画像
+  [...root.querySelectorAll('img')].forEach((img, i) => {
+    const no = i + 1;
+    if (!img.closest('div.separator')) {
+      const a = img.parentNode;
+      const node = (a.nodeName === 'A' && a.children.length === 1) ? a : img;
+      const par = node.parentNode;
+      const wrap = document.createElement('div');
+      wrap.className = 'separator';
+      if (par.nodeName === 'P' && [...par.childNodes].every(n => n === node || (n.nodeType === 3 && !n.textContent.trim()))) {
+        par.replaceWith(wrap); wrap.appendChild(node); bump('画像を separator で囲む');
+      } else if (par.nodeName === 'P') {
+        warn('画像', `${no}枚目：文章と同じ段落の中にあるため、separator で囲んでいません（手動で確認）`);
+      } else {
+        par.insertBefore(wrap, node); wrap.appendChild(node); bump('画像を separator で囲む');
+      }
+    }
+    const m = (img.getAttribute('src') || '').match(/[\/=]w(\d+)-h(\d+)(?=[\/?=&-]|$)/);
+    if (m) {
+      if (img.getAttribute('width') !== m[1] || img.getAttribute('height') !== m[2]) {
+        img.setAttribute('width', m[1]); img.setAttribute('height', m[2]); bump('width・height の付与／更新');
+      }
+    } else if (!(img.hasAttribute('width') && img.hasAttribute('height'))) {
+      warn('画像', `${no}枚目：URLに w○○-h○○ が無く、width・height を付けられませんでした`);
+    }
+    if (i === 0) {
+      if (img.getAttribute('loading') !== 'eager') { img.setAttribute('loading', 'eager'); bump('最初の画像に loading="eager"'); }
+    } else if (img.hasAttribute('loading')) {
+      img.removeAttribute('loading'); bump('2枚目以降の loading 属性の削除');
+    }
+    const alt = img.getAttribute('alt');
+    if (alt === null || !alt.trim()) warn('alt', `${no}枚目：alt が空です`);
+    else {
+      if (/\.(jpe?g|png|gif|webp)$/i.test(alt.trim()) || /^IMG_?\d+/i.test(alt.trim())) warn('alt', `${no}枚目：alt がファイル名のようです（${excerpt(alt)}）`);
+      if (alt.includes('hyphenhyphen')) warn('alt', `${no}枚目：alt に hyphenhyphen があります（自動では直していません）`);
+    }
+    reorderAttrs(img);
+  });
+
+  // 3. hyphenhyphen（本文のテキストだけ。URLは触らない）
+  const tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let t;
+  while ((t = tw.nextNode())) {
+    if (t.nodeValue.includes('hyphenhyphen')) {
+      bump('hyphenhyphen → --', t.nodeValue.split('hyphenhyphen').length - 1);
+      t.nodeValue = t.nodeValue.split('hyphenhyphen').join('--');
+    }
+  }
+
+  // 4. 孤立した <br>
+  const sib = (n, d) => { do { n = n[d]; } while (n && n.nodeType === 3 && !n.textContent.trim()); return n; };
+  const isBlk = x => !x || x.nodeType === 8 || (x.nodeType === 1 && BLOCK.has(x.nodeName));
+  root.querySelectorAll('br').forEach(br => {
+    const par = br.parentNode;
+    if (!(par.nodeType === 11 || par.nodeName === 'DIV')) return;
+    if (par.nodeType === 1 && par.closest('.climbing-timeline')) return;
+    if (isBlk(sib(br, 'previousSibling')) && isBlk(sib(br, 'nextSibling'))) { br.remove(); bump('孤立した <br> の削除'); }
+  });
+
+  // 5. 空の <p>・属性なしの空 <div>（タイムライン内は触らない）
+  [...root.querySelectorAll('p,div')].reverse().forEach(el => {
+    if (el.closest('.climbing-timeline')) return;
+    if (!el.attributes.length && el.children.length === 0 && !el.textContent.trim()) {
+      el.remove(); bump('空の <' + el.tagName.toLowerCase() + '> の削除');
+    }
+  });
+
+  // 6. 警告（直さずに知らせる）
+  root.querySelectorAll('p').forEach(p => {
+    const c = [...p.children], txt = p.textContent.trim();
+    if (txt && c.length === 1 && /^(STRONG|B)$/.test(c[0].nodeName) && c[0].textContent.trim() === txt)
+      warn('見出し候補（太字だけの段落）', excerpt(txt));
+  });
+  root.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(h => {
+    if (/[─―—]{2,}/.test(h.textContent)) warn('見出しにダッシュ', excerpt(h.textContent));
+  });
+  root.querySelectorAll('blockquote').forEach(b => warn('blockquote（引用以外なら変換が必要）', excerpt(b.textContent)));
+  root.querySelectorAll('p,li,h1,h2,h3,h4,h5,h6').forEach(b => {
+    if (/^[\u00a0\u3000]/.test(b.textContent)) warn('行頭の余計な空白', excerpt(b.textContent));
+  });
+  const tw2 = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  while ((t = tw2.nextNode())) {
+    for (const m of t.nodeValue.matchAll(PUNCT)) {
+      const i = m.index, v = t.nodeValue;
+      warn('全角文字に挟まれた半角の , や .', '…' + v.slice(Math.max(0, i - 6), i + 8).replace(/\s+/g, ' ') + '…');
+    }
+  }
+  // 目次アンカー：リンク先の id があるか、id が重複していないか
+  const ids = new Map();
+  root.querySelectorAll('[id]').forEach(e => ids.set(e.id, (ids.get(e.id) || 0) + 1));
+  ids.forEach((n, id) => { if (n > 1) warn('id の重複', `#${id}（${n}か所）`); });
+  root.querySelectorAll('a[href^="#"]').forEach(a => {
+    const h = a.getAttribute('href').slice(1);
+    if (h && !ids.has(h)) warn('目次リンク先の id が見つからない', `#${h}（記事の一部だけを貼った場合は問題ありません）`);
+  });
+
+  // 7. 書き出し
+  const box = document.createElement('div');
+  box.appendChild(root);
+  const out = box.innerHTML.replace(/<br>/g, '<br />').replace(/\n{3,}/g, '\n\n').trim();
+
+  // 8. 検証（書き出した文字列を読み直して、元と比べる）
+  const t2 = document.createElement('template');
+  t2.innerHTML = out;
+  const after = snapshot(t2.content);
+  const labels = { src: '画像の src', href: 'リンクの href', alt: '画像の alt' };
+  const verify = Object.keys(labels).map(k => {
+    const diffs = [];
+    const n = Math.max(before[k].length, after[k].length);
+    for (let i = 0; i < n && diffs.length < 5; i++)
+      if (before[k][i] !== after[k][i]) diffs.push(`${i + 1}件目が違います：元「${excerpt(String(before[k][i]), 60)}」→ 後「${excerpt(String(after[k][i]), 60)}」`);
+    return { label: labels[k], n: before[k].length, m: after[k].length, ok: before[k].length === after[k].length && diffs.length === 0, diffs };
+  });
+  return { out, stats, warns, verify };
+}
+
+/* ---------- 画像URLの短縮と復元（Claudeに渡す文字数を減らす） ---------- */
+function compact(html) {
+  const map = new Map();
+  const text = html.replace(URL_RE, u => {
+    if (!map.has(u)) map.set(u, `{{U${map.size + 1}}}`);
+    return map.get(u);
+  });
+  return { text, urls: [...map.keys()] };
+}
+
+function groupWarns(warns) {
+  const g = new Map();
+  warns.forEach(x => { if (!g.has(x.type)) g.set(x.type, []); g.get(x.type).push(x.text); });
+  return g;
+}
+
+function claudePack(r, outText) {
+  const c = compact(outText);
+  const L = [];
+  L.push('【お掃除同心のレポート】');
+  L.push('検証：' + r.verify.map(x => `${x.label} ${x.n}→${x.m}件 ${x.ok ? '一致' : '不一致'}`).join(' / '));
+  L.push('変換：' + (Object.entries(r.stats).map(([k, n]) => `${k} ${n}件`).join('、') || 'なし'));
+  if (!r.warns.length) L.push('警告：なし');
+  else {
+    L.push(`警告：${r.warns.length}件（自動では直していません）`);
+    groupWarns(r.warns).forEach((items, type) => {
+      L.push(`- ${type}（${items.length}）：` + items.slice(0, 5).join(' ／ ') + (items.length > 5 ? ' ほか' : ''));
+    });
+  }
+  L.push(c.urls.length
+    ? `画像URLの共通部分 ${c.urls.length} 種類を {{U1}} などに短縮済み。この記号は書き換えず、そのまま残してください。`
+    : '画像URLの短縮はありません。');
+  L.push('');
+  L.push('```html');
+  L.push(c.text);
+  L.push('```');
+  return L.join('\n');
+}
+
+/* ---------- 表示 ---------- */
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+function render(r) {
+  const box = $('report');
+  box.replaceChildren();
+
+  const v = el('section', 'card'); v.append(el('h3', null, '検証：画像とリンクが元と同じか'));
+  const vu = el('ul');
+  r.verify.forEach(x => {
+    vu.append(el('li', x.ok ? 'ok' : 'ng', `${x.ok ? '✅' : '❌'} ${x.label}：元 ${x.n} 件 / 掃除後 ${x.m} 件　${x.ok ? '完全一致' : '不一致'}`));
+    x.diffs.forEach(d => vu.append(el('li', 'ng sub', d)));
+  });
+  v.append(vu); box.append(v);
+
+  const s = el('section', 'card'); s.append(el('h3', null, '変換した内容'));
+  const entries = Object.entries(r.stats);
+  if (!entries.length) s.append(el('p', 'empty', '変換が必要な箇所はありませんでした。'));
+  else { const u = el('ul'); entries.forEach(([k, n]) => u.append(el('li', null, `${k}：${n} 件`))); s.append(u); }
+  box.append(s);
+
+  const w = el('section', 'card'); w.append(el('h3', null, `警告：${r.warns.length} 件（自動では直していません）`));
+  if (!r.warns.length) w.append(el('p', 'empty', '気になる箇所は見つかりませんでした。'));
+  else {
+    const sc = el('div', 'scroll');
+    groupWarns(r.warns).forEach((items, type) => {
+      sc.append(el('div', 'gname warn', `${type}（${items.length}）`));
+      const u = el('ul'); items.slice(0, 30).forEach(i => u.append(el('li', null, i)));
+      if (items.length > 30) u.append(el('li', 'empty', `ほか ${items.length - 30} 件`));
+      sc.append(u);
+    });
+    w.append(sc);
+  }
+  box.append(w);
+}
+
+/* ---------- メッセージ表示：欄ごとに独立（左＝元のHTML側、右＝掃除後側、下＝復元側） ---------- */
+const timers = {};
+function say(id, text, kind = '', ms = 0) {
+  const e = $(id);
+  clearTimeout(timers[id]);
+  e.textContent = text;
+  e.className = 'status' + (kind ? ' ' + kind : '');
+  if (ms) timers[id] = setTimeout(() => { e.textContent = e.dataset.idle || ''; e.className = 'status'; }, ms);
+}
+const num = n => n.toLocaleString('ja-JP');
+const showSize = (id, s) => { $(id).textContent = s ? `${num(s.length)} 文字` : ''; };
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.cssText = 'position:fixed;opacity:0';
+    document.body.append(ta); ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch {}
+    ta.remove();
+    return ok;
+  }
+}
+
+/* ---------- バージョン番号（ブラウザに記憶されるので、開き直しても続きから） ---------- */
+const ver = ls.get('bft_ver', {});
+const nameKey = () => $('name').value.trim().replace(/[\\/:*?"<>|]+/g, '_') || 'article';
+const nextName = () => `${nameKey()}_v${(ver[nameKey()] || 0) + 1}.html`;
+const showNext = () => { $('next').textContent = 'この名前で保存されます：' + nextName(); };
+
+function saveFile(text, statusId) {
+  const k = nameKey();
+  ver[k] = (ver[k] || 0) + 1;
+  ls.set('bft_ver', ver);
+  const fn = `${k}_v${ver[k]}.html`;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'text/html;charset=utf-8' }));
+  a.download = fn;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  say(statusId, `✅ ${fn} として保存しました`, 'ok', 6000);
+  showNext();
+}
+
+/* ---------- 操作 ---------- */
+let last = null;
+let claudeCopied = false;
+let urls = ls.get('bft_urls', []);
+
+function run() {
+  const s = $('src').value;
+  if (!s.trim()) { say('msgSrc', '元のHTMLを貼り付けてください', 'ng', 4000); return; }
+  const r = format(s);
+  last = r;
+  $('out').value = r.out;
+  urls = compact(r.out).urls;
+  ls.set('bft_urls', urls);
+  render(r);
+  showSize('sizeSrc', s);
+  const cut = Math.round((1 - r.out.length / s.length) * 100);
+  $('sizeOut').textContent = `${num(r.out.length)} 文字（${cut >= 0 ? cut + '% 削減' : -cut + '% 増加'}）`;
+  const bad = r.verify.some(x => !x.ok);
+  say('msgSrc', bad ? '掃除しました。ただし検証で不一致があります' : `掃除しました（検証OK・警告 ${r.warns.length} 件）`, bad ? 'ng' : 'ok', 6000);
+  say('msgOut', '');
+}
+
+$('name').addEventListener('input', showNext);
+$('auto').checked = ls.get('bft_auto', false);
+$('auto').addEventListener('change', () => ls.set('bft_auto', $('auto').checked));
+$('run').onclick = run;
+$('src').addEventListener('keydown', e => { if (e.ctrlKey && e.key === 'Enter') run(); });
+$('src').addEventListener('input', () => showSize('sizeSrc', $('src').value));
+$('src').addEventListener('paste', e => {
+  // 貼り付けると、前の記事が残っていても全部置き換える（つなぎ足しを防ぐ）
+  const t = e.clipboardData && e.clipboardData.getData('text');
+  if (!t) return;
+  e.preventDefault();
+  $('src').value = t;
+  showSize('sizeSrc', t);
+  if ($('auto').checked) run();
+  else say('msgSrc', '貼り付けました（前の内容は置き換えました）。「掃除する」を押してください', '', 6000);
+});
+$('paste').onclick = async () => {
+  try { $('src').value = await navigator.clipboard.readText(); run(); }
+  catch { say('msgSrc', '自動で貼り付けできませんでした。左の欄をクリックして Ctrl + V してください', 'ng', 6000); }
+};
+$('reset').onclick = () => {
+  if (claudeCopied && urls.length && !$('back').value.trim() &&
+      !confirm('「Claude用にコピー」を使いましたが、まだ画像URLを復元していません。\nリセットするとURLの記録が消えて、復元できなくなります。リセットしますか？')) return;
+  ['src', 'out', 'back'].forEach(id => { $(id).value = ''; });
+  $('name').value = '';
+  $('report').replaceChildren();
+  ['sizeSrc', 'sizeOut'].forEach(id => { $(id).textContent = ''; });
+  last = null; urls = []; claudeCopied = false;
+  ls.set('bft_urls', []);
+  say('msgSrc', 'リセットしました。次の記事をどうぞ', 'ok', 5000); say('msgOut', ''); say('msgBack', '');
+  showNext();
+  $('src').focus();
+};
+
+$('copy').onclick = async () => {
+  const v = $('out').value;
+  if (!v) { say('msgOut', '先に「掃除する」を押してください', 'ng', 4000); return; }
+  say('msgOut', (await copyText(v)) ? `✅ 掃除後のHTMLをコピーしました（${num(v.length)} 文字）` : 'コピーできませんでした', 'ok', 5000);
+};
+$('copyClaude').onclick = async () => {
+  if (!$('out').value || !last) { say('msgOut', '先に「掃除する」を押してください', 'ng', 4000); return; }
+  const pack = claudePack(last, $('out').value);
+  claudeCopied = true;
+  const full = $('out').value.length;
+  say('msgOut', (await copyText(pack)) ? `✅ Claude用にコピーしました（${num(pack.length)} 文字。URL短縮前は ${num(full)} 文字）` : 'コピーできませんでした', 'ok', 7000);
+};
+$('save').onclick = () => {
+  if (!$('out').value) { say('msgOut', '先に「掃除する」を押してください', 'ng', 4000); return; }
+  saveFile($('out').value, 'msgOut');
+};
+
+/* 復元 */
+$('restore').onclick = () => {
+  let t = $('back').value;
+  if (!t.trim()) { say('msgBack', 'Claudeが返したHTMLを貼り付けてください', 'ng', 4000); return; }
+  t = t.replace(/^\s*```[a-z]*\s*\n/i, '').replace(/\n```\s*$/, '');
+  let n = 0; const miss = new Set();
+  t = t.replace(/\{\{U(\d+)\}\}/g, (m, i) => { const u = urls[i - 1]; if (u) { n++; return u; } miss.add(m); return m; });
+  $('back').value = t;
+  if (miss.size) say('msgBack', `❌ 復元できない記号があります：${[...miss].slice(0, 5).join(' ')}（掃除し直した後は復元できません）`, 'ng');
+  else if (!n) say('msgBack', '復元する {{U1}} 形式の記号が見つかりませんでした', 'ng', 6000);
+  else say('msgBack', `✅ 画像URLを ${n} か所復元しました`, 'ok', 6000);
+};
+$('copyBack').onclick = async () => {
+  const v = $('back').value;
+  if (!v) { say('msgBack', 'コピーするものがありません', 'ng', 4000); return; }
+  say('msgBack', (await copyText(v)) ? '✅ コピーしました' : 'コピーできませんでした', 'ok', 5000);
+};
+$('saveBack').onclick = () => {
+  if (!$('back').value) { say('msgBack', '保存するものがありません', 'ng', 4000); return; }
+  if (/\{\{U\d+\}\}/.test($('back').value) && !confirm('{{U1}} などの記号が残っています。このまま保存しますか？')) return;
+  saveFile($('back').value, 'msgBack');
+};
+
+$('appname').title = 'お掃除同心 ' + VERSION;
+$('appname').addEventListener('click', () => say('msgSrc', 'お掃除同心 ' + VERSION, '', 3000));
+showNext();
+</script>
+</body>
+</html>
